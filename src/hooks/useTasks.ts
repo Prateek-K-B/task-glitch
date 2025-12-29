@@ -22,7 +22,9 @@ interface UseTasksState {
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   undoDelete: () => void;
+  clearLastDeleted: () => void;
 }
+
 
 const INITIAL_METRICS: Metrics = {
   totalRevenue: 0,
@@ -41,8 +43,10 @@ export function useTasks(): UseTasksState {
   const fetchedRef = useRef(false);
 
   function normalizeTasks(input: any[]): Task[] {
-    const now = Date.now();
-    return (Array.isArray(input) ? input : []).map((t, idx) => {
+  const now = Date.now();
+
+  return (Array.isArray(input) ? input : [])
+    .map((t, idx) => {
       const created = t.createdAt
         ? new Date(t.createdAt)
         : new Date(now - (idx + 1) * 24 * 3600 * 1000);
@@ -54,18 +58,20 @@ export function useTasks(): UseTasksState {
           : undefined);
 
       return {
-        id: t.id,
-        title: t.title,
-        revenue: Number(t.revenue) ?? 0,
+        id: typeof t.id === 'string' && t.id.trim() !== '' ? t.id : crypto.randomUUID(),
+        title: typeof t.title === 'string' && t.title.trim() !== '' ? t.title : 'Untitled Task',
+        revenue: Number.isFinite(Number(t.revenue)) ? Number(t.revenue) : 0,
         timeTaken: Number(t.timeTaken) > 0 ? Number(t.timeTaken) : 1,
-        priority: t.priority,
-        status: t.status,
+        priority: t.priority ?? 'Medium',
+        status: t.status ?? 'Todo',
         notes: t.notes,
         createdAt: created.toISOString(),
         completedAt: completed,
       } as Task;
-    });
-  }
+    })
+    .filter(t => t.title !== ''); // safety
+}
+
 
   useEffect(() => {
     let isMounted = true;
@@ -167,21 +173,27 @@ export function useTasks(): UseTasksState {
   }, []);
 
   const undoDelete = useCallback(() => {
-    if (!lastDeleted) return;
-    setTasks(prev => [...prev, lastDeleted]);
-    setLastDeleted(null);
-  }, [lastDeleted]);
+  if (!lastDeleted) return;
+  setTasks(prev => [...prev, lastDeleted]);
+  setLastDeleted(null);
+}, [lastDeleted]);
 
-  return {
-    tasks,
-    loading,
-    error,
-    derivedSorted,
-    metrics,
-    lastDeleted,
-    addTask,
-    updateTask,
-    deleteTask,
-    undoDelete,
-  };
+const clearLastDeleted = useCallback(() => {
+  setLastDeleted(null);
+}, []);
+
+return {
+  tasks,
+  loading,
+  error,
+  derivedSorted,
+  metrics,
+  lastDeleted,
+  addTask,
+  updateTask,
+  deleteTask,
+  undoDelete,
+  clearLastDeleted,
+};
+
 }
