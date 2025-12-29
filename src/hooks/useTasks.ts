@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DerivedTask, Metrics, Task } from '@/types';
+import { DerivedTask, Metrics, Task, TaskInput } from '@/types';
+
 import {
   computeAverageROI,
   computePerformanceGrade,
@@ -18,13 +19,12 @@ interface UseTasksState {
   derivedSorted: DerivedTask[];
   metrics: Metrics;
   lastDeleted: Task | null;
-  addTask: (task: Omit<Task, 'id'> & { id?: string }) => void;
+  addTask: (task: TaskInput) => void;
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   undoDelete: () => void;
   clearLastDeleted: () => void;
 }
-
 
 const INITIAL_METRICS: Metrics = {
   totalRevenue: 0,
@@ -43,35 +43,40 @@ export function useTasks(): UseTasksState {
   const fetchedRef = useRef(false);
 
   function normalizeTasks(input: any[]): Task[] {
-  const now = Date.now();
+    const now = Date.now();
 
-  return (Array.isArray(input) ? input : [])
-    .map((t, idx) => {
-      const created = t.createdAt
-        ? new Date(t.createdAt)
-        : new Date(now - (idx + 1) * 24 * 3600 * 1000);
+    return (Array.isArray(input) ? input : [])
+      .map((t, idx) => {
+        const created = t.createdAt
+          ? new Date(t.createdAt)
+          : new Date(now - (idx + 1) * 24 * 3600 * 1000);
 
-      const completed =
-        t.completedAt ||
-        (t.status === 'Done'
-          ? new Date(created.getTime() + 24 * 3600 * 1000).toISOString()
-          : undefined);
+        const completed =
+          t.completedAt ||
+          (t.status === 'Done'
+            ? new Date(created.getTime() + 24 * 3600 * 1000).toISOString()
+            : undefined);
 
-      return {
-        id: typeof t.id === 'string' && t.id.trim() !== '' ? t.id : crypto.randomUUID(),
-        title: typeof t.title === 'string' && t.title.trim() !== '' ? t.title : 'Untitled Task',
-        revenue: Number.isFinite(Number(t.revenue)) ? Number(t.revenue) : 0,
-        timeTaken: Number(t.timeTaken) > 0 ? Number(t.timeTaken) : 1,
-        priority: t.priority ?? 'Medium',
-        status: t.status ?? 'Todo',
-        notes: t.notes,
-        createdAt: created.toISOString(),
-        completedAt: completed,
-      } as Task;
-    })
-    .filter(t => t.title !== ''); // safety
-}
-
+        return {
+          id:
+            typeof t.id === 'string' && t.id.trim() !== ''
+              ? t.id
+              : crypto.randomUUID(),
+          title:
+            typeof t.title === 'string' && t.title.trim() !== ''
+              ? t.title
+              : 'Untitled Task',
+          revenue: Number.isFinite(Number(t.revenue)) ? Number(t.revenue) : 0,
+          timeTaken: Number(t.timeTaken) > 0 ? Number(t.timeTaken) : 1,
+          priority: t.priority ?? 'Medium',
+          status: t.status ?? 'Todo',
+          notes: t.notes,
+          createdAt: created.toISOString(),
+          completedAt: completed,
+        } as Task;
+      })
+      .filter(t => t.title !== '');
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -82,16 +87,9 @@ export function useTasks(): UseTasksState {
         if (!res.ok) throw new Error(`Failed to load tasks.json (${res.status})`);
 
         const data = (await res.json()) as any[];
-        const normalized: Task[] = normalizeTasks(data);
-        let finalData = normalized.length > 0 ? normalized : generateSalesTasks(50);
-
-        if (Math.random() < 0.5) {
-          finalData = [
-            ...finalData,
-            { id: undefined, title: '', revenue: NaN, timeTaken: 0, priority: 'High', status: 'Todo' } as any,
-            { id: finalData[0]?.id ?? 'dup-1', title: 'Duplicate ID', revenue: 9999999999, timeTaken: -5, priority: 'Low', status: 'Done' } as any,
-          ];
-        }
+        const normalized = normalizeTasks(data);
+        const finalData =
+          normalized.length > 0 ? normalized : generateSalesTasks(50);
 
         if (isMounted) setTasks(finalData);
       } catch (e: any) {
@@ -105,7 +103,6 @@ export function useTasks(): UseTasksState {
     }
 
     load();
-
     return () => {
       isMounted = false;
     };
@@ -136,14 +133,23 @@ export function useTasks(): UseTasksState {
     };
   }, [tasks]);
 
-  const addTask = useCallback((task: Omit<Task, 'id'> & { id?: string }) => {
+  // ✅ FIXED: uses TaskInput
+  const addTask = useCallback((task: TaskInput) => {
     setTasks(prev => {
       const id = task.id ?? crypto.randomUUID();
-      const timeTaken = task.timeTaken <= 0 ? 1 : task.timeTaken;
       const createdAt = new Date().toISOString();
       const completedAt = task.status === 'Done' ? createdAt : undefined;
 
-      return [...prev, { ...task, id, timeTaken, createdAt, completedAt }];
+      return [
+        ...prev,
+        {
+          ...task,
+          id,
+          createdAt,
+          completedAt,
+          timeTaken: task.timeTaken <= 0 ? 1 : task.timeTaken,
+        },
+      ];
     });
   }, []);
 
@@ -153,12 +159,11 @@ export function useTasks(): UseTasksState {
         if (t.id !== id) return t;
         const updated = { ...t, ...patch };
 
-        if (t.status !== 'Done' && updated.status === 'Done' && !updated.completedAt) {
+        if (t.status !== 'Done' && updated.status === 'Done') {
           updated.completedAt = new Date().toISOString();
         }
 
         if (updated.timeTaken <= 0) updated.timeTaken = 1;
-
         return updated;
       })
     );
@@ -173,27 +178,26 @@ export function useTasks(): UseTasksState {
   }, []);
 
   const undoDelete = useCallback(() => {
-  if (!lastDeleted) return;
-  setTasks(prev => [...prev, lastDeleted]);
-  setLastDeleted(null);
-}, [lastDeleted]);
+    if (!lastDeleted) return;
+    setTasks(prev => [...prev, lastDeleted]);
+    setLastDeleted(null);
+  }, [lastDeleted]);
 
-const clearLastDeleted = useCallback(() => {
-  setLastDeleted(null);
-}, []);
+  const clearLastDeleted = useCallback(() => {
+    setLastDeleted(null);
+  }, []);
 
-return {
-  tasks,
-  loading,
-  error,
-  derivedSorted,
-  metrics,
-  lastDeleted,
-  addTask,
-  updateTask,
-  deleteTask,
-  undoDelete,
-  clearLastDeleted,
-};
-
+  return {
+    tasks,
+    loading,
+    error,
+    derivedSorted,
+    metrics,
+    lastDeleted,
+    addTask,
+    updateTask,
+    deleteTask,
+    undoDelete,
+    clearLastDeleted,
+  };
 }

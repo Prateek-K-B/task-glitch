@@ -38,6 +38,7 @@ export default function TaskTable({ tasks, onAdd, onUpdate, onDelete }: Props) {
   } else {
     onAdd(value);
   }
+  setOpenForm(false);
 };
 
 
