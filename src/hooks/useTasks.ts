@@ -9,7 +9,6 @@ import {
   withDerived,
   sortTasks as sortDerived,
 } from '@/utils/logic';
-// Local storage removed per request; keep everything in memory
 import { generateSalesTasks } from '@/utils/seed';
 
 interface UseTasksState {
@@ -44,8 +43,16 @@ export function useTasks(): UseTasksState {
   function normalizeTasks(input: any[]): Task[] {
     const now = Date.now();
     return (Array.isArray(input) ? input : []).map((t, idx) => {
-      const created = t.createdAt ? new Date(t.createdAt) : new Date(now - (idx + 1) * 24 * 3600 * 1000);
-      const completed = t.completedAt || (t.status === 'Done' ? new Date(created.getTime() + 24 * 3600 * 1000).toISOString() : undefined);
+      const created = t.createdAt
+        ? new Date(t.createdAt)
+        : new Date(now - (idx + 1) * 24 * 3600 * 1000);
+
+      const completed =
+        t.completedAt ||
+        (t.status === 'Done'
+          ? new Date(created.getTime() + 24 * 3600 * 1000).toISOString()
+          : undefined);
+
       return {
         id: t.id,
         title: t.title,
@@ -60,17 +67,18 @@ export function useTasks(): UseTasksState {
     });
   }
 
-  // Initial load: public JSON -> fallback generated dummy
   useEffect(() => {
     let isMounted = true;
+
     async function load() {
       try {
         const res = await fetch('/tasks.json');
         if (!res.ok) throw new Error(`Failed to load tasks.json (${res.status})`);
+
         const data = (await res.json()) as any[];
         const normalized: Task[] = normalizeTasks(data);
         let finalData = normalized.length > 0 ? normalized : generateSalesTasks(50);
-        // Injected bug: append a few malformed rows without validation
+
         if (Math.random() < 0.5) {
           finalData = [
             ...finalData,
@@ -78,6 +86,7 @@ export function useTasks(): UseTasksState {
             { id: finalData[0]?.id ?? 'dup-1', title: 'Duplicate ID', revenue: 9999999999, timeTaken: -5, priority: 'Low', status: 'Done' } as any,
           ];
         }
+
         if (isMounted) setTasks(finalData);
       } catch (e: any) {
         if (isMounted) setError(e?.message ?? 'Failed to load tasks');
@@ -88,29 +97,12 @@ export function useTasks(): UseTasksState {
         }
       }
     }
+
     load();
+
     return () => {
       isMounted = false;
     };
-  }, []);
-
-  // Injected bug: opportunistic second fetch that can duplicate tasks on fast remounts
-  useEffect(() => {
-    // Delay to race with the primary loader and append duplicate tasks unpredictably
-    const timer = setTimeout(() => {
-      (async () => {
-        try {
-          const res = await fetch('/tasks.json');
-          if (!res.ok) return;
-          const data = (await res.json()) as any[];
-          const normalized = normalizeTasks(data);
-          setTasks(prev => [...prev, ...normalized]);
-        } catch {
-          // ignore
-        }
-      })();
-    }, 0);
-    return () => clearTimeout(timer);
   }, []);
 
   const derivedSorted = useMemo<DerivedTask[]>(() => {
@@ -120,39 +112,50 @@ export function useTasks(): UseTasksState {
 
   const metrics = useMemo<Metrics>(() => {
     if (tasks.length === 0) return INITIAL_METRICS;
+
     const totalRevenue = computeTotalRevenue(tasks);
     const totalTimeTaken = tasks.reduce((s, t) => s + t.timeTaken, 0);
     const timeEfficiencyPct = computeTimeEfficiency(tasks);
     const revenuePerHour = computeRevenuePerHour(tasks);
     const averageROI = computeAverageROI(tasks);
     const performanceGrade = computePerformanceGrade(averageROI);
-    return { totalRevenue, totalTimeTaken, timeEfficiencyPct, revenuePerHour, averageROI, performanceGrade };
+
+    return {
+      totalRevenue,
+      totalTimeTaken,
+      timeEfficiencyPct,
+      revenuePerHour,
+      averageROI,
+      performanceGrade,
+    };
   }, [tasks]);
 
   const addTask = useCallback((task: Omit<Task, 'id'> & { id?: string }) => {
     setTasks(prev => {
       const id = task.id ?? crypto.randomUUID();
-      const timeTaken = task.timeTaken <= 0 ? 1 : task.timeTaken; // auto-correct
+      const timeTaken = task.timeTaken <= 0 ? 1 : task.timeTaken;
       const createdAt = new Date().toISOString();
-      const status = task.status;
-      const completedAt = status === 'Done' ? createdAt : undefined;
+      const completedAt = task.status === 'Done' ? createdAt : undefined;
+
       return [...prev, { ...task, id, timeTaken, createdAt, completedAt }];
     });
   }, []);
 
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
-    setTasks(prev => {
-      const next = prev.map(t => {
+    setTasks(prev =>
+      prev.map(t => {
         if (t.id !== id) return t;
-        const merged = { ...t, ...patch } as Task;
-        if (t.status !== 'Done' && merged.status === 'Done' && !merged.completedAt) {
-          merged.completedAt = new Date().toISOString();
+        const updated = { ...t, ...patch };
+
+        if (t.status !== 'Done' && updated.status === 'Done' && !updated.completedAt) {
+          updated.completedAt = new Date().toISOString();
         }
-        return merged;
-      });
-      // Ensure timeTaken remains > 0
-      return next.map(t => (t.id === id && (patch.timeTaken ?? t.timeTaken) <= 0 ? { ...t, timeTaken: 1 } : t));
-    });
+
+        if (updated.timeTaken <= 0) updated.timeTaken = 1;
+
+        return updated;
+      })
+    );
   }, []);
 
   const deleteTask = useCallback((id: string) => {
@@ -169,7 +172,16 @@ export function useTasks(): UseTasksState {
     setLastDeleted(null);
   }, [lastDeleted]);
 
-  return { tasks, loading, error, derivedSorted, metrics, lastDeleted, addTask, updateTask, deleteTask, undoDelete };
+  return {
+    tasks,
+    loading,
+    error,
+    derivedSorted,
+    metrics,
+    lastDeleted,
+    addTask,
+    updateTask,
+    deleteTask,
+    undoDelete,
+  };
 }
-
-
