@@ -28,3 +28,6 @@ export interface Metrics {
 }
 
 
+export type TaskInput = Omit<Task, 'id' | 'createdAt' | 'completedAt'> & {
+  id?: string;
+};

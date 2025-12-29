@@ -12,14 +12,13 @@ import {
   Stack,
   TextField,
 } from '@mui/material';
-import { Priority, Status, Task } from '@/types';
+import { Priority, Status, Task, TaskInput } from '@/types';
+
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSubmit: (
-  value: Omit<Task, 'id' | 'createdAt' | 'completedAt'> & { id?: string }
-) => void;
+  onSubmit: (value: TaskInput)  => void;
 
   existingTitles: string[];
   initial?: Task | null;
@@ -71,19 +70,21 @@ export default function TaskForm({ open, onClose, onSubmit, existingTitles, init
     !!status;
 
   const handleSubmit = () => {
-    const safeTime = typeof timeTaken === 'number' && timeTaken > 0 ? timeTaken : 1; // auto-correct
-    const payload: Omit<Task, 'id' | 'createdAt' | 'completedAt'> & { id?: string } = {
-      title: title.trim(),
-      revenue: typeof revenue === 'number' ? revenue : 0,
-      timeTaken: safeTime,
-      priority: ((priority || 'Medium') as Priority),
-      status: ((status || 'Todo') as Status),
-      notes: notes.trim() || undefined,
-      ...(initial ? { id: initial.id } : {}),
-    };
-    onSubmit(payload);
-    onClose();
+  const safeTime = typeof timeTaken === 'number' && timeTaken > 0 ? timeTaken : 1;
+
+  const payload: TaskInput = {
+    title: title.trim(),
+    revenue: typeof revenue === 'number' ? revenue : 0,
+    timeTaken: safeTime,
+    priority: (priority || 'Medium') as Priority,
+    status: (status || 'Todo') as Status,
+    notes: notes.trim() || undefined,
+    ...(initial ? { id: initial.id } : {}),
   };
+
+  onSubmit(payload);
+  onClose();
+};
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
